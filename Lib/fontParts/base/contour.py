@@ -411,7 +411,7 @@ class BaseContour(
 
     def _contourInside(self, otherContour):
         """
-        Subclasses may override this method.
+        Subclasses must override this method.
         """
         self.raiseNotImplementedError()
 
@@ -456,6 +456,111 @@ class BaseContour(
         pen = AreaPen(self.layer)
         self.draw(pen)
         return abs(pen.value)
+
+    # -------
+    # Compare
+    # -------
+
+    def compare(self, otherContour, startPoint=True, position=True,
+                pointTypes=False):
+        """
+        Determine if ``otherContour`` has the same point structure as this contour.
+        If ``startPoint`` contours must have the same start point to compare
+        to ``True``. If ``position``, the contour has to have the same coordiates
+        to compare to ``True``. If ``pointTypes`` is ``True``, the point types must
+        be the same to compare to ``True``.
+
+            >>> contour.compare(anotherContour)
+            True
+
+        This will retun a :ref:`type-bool` indicating if the two contours have the
+        same struture. The path direction must be the same.
+
+        ``otherContour`` must be a :class:`BaseContour`.
+        ``startPoint`` must be a :ref:`type-bool`.
+        ``position`` must be a :ref:`type-bool`.
+        ``pointTypes`` must be a :ref:`type-bool`.
+        """
+        otherContour = normalizers.normalizeContour(otherContour)
+        startPoint = normalizers.normalizeBoolean(startPoint)
+        position = normalizers.normalizeBoolean(position)
+        pointTypes = normalizers.normalizeBoolean(pointTypes)
+        return self._compare(otherContour, startPoint, position, pointTypes)
+
+    @staticmethod
+    def _get_pt_distances(contourPoints, pointTypes):
+        """
+        Helper method to calcuate distance between points
+        """
+        digest = []
+        for i, point in enumerate(contourPoints):
+            if not pointTypes:
+                if i is 0:
+                    digest.append((contourPoints[len(contourPoints)-1][0]-point[0],
+                                  contourPoints[len(contourPoints)-1][1]-point[1]))
+                else:
+                    digest.append((contourPoints[i-1][0]-point[0],
+                                   contourPoints[i-1][1]-point[1]))
+            if pointTypes:
+                if i is 0:
+                    digest.append((contourPoints[len(contourPoints)-1][0][0]-point[0][0],
+                                  contourPoints[len(contourPoints)-1][0][1]-point[0][1],
+                                  contourPoints[len(contourPoints)-1][1], point[1]))
+                else:
+                    digest.append((contourPoints[i-1][0][0]-point[0][0],
+                                   contourPoints[i-1][0][1]-point[0][1],
+                                   contourPoints[i-1][1], point[1]))
+        return digest
+
+    @staticmethod
+    def _shift_in_place(digest, n=1):
+        """
+        Helper method to shift digest distances around
+        """
+        n = n % len(digest)
+        head = digest[:n]
+        digest[:n] = []
+        digest.extend(head)
+        return digest
+
+    def _compare(self, otherContour, startPoint, position, pointTypes):
+        """
+        Subclasses may override this method.
+        """
+        # First a sanity check for number of points in contours
+        if len(self.points) != len(otherContour.points):
+            return False
+
+        # Handle the two cases of pointTypes
+        if pointTypes:
+            selfPoints = [(point.position, point.type) for point in self.points]
+            otherPoints = [(point.position, point.type) for point in otherContour.points]
+        else:
+            selfPoints = [point.position for point in self.points]
+            otherPoints = [point.position for point in otherContour.points]
+
+        if startPoint and position:
+            return selfPoints == otherPoints
+        elif not startPoint and position:
+            return sorted(selfPoints) == sorted(otherPoints)
+        else:
+            selfDigest = self._get_pt_distances(selfPoints, pointTypes)
+            otherDigest = self._get_pt_distances(otherPoints, pointTypes)
+
+            # If contour positions are differnt, but intial digests
+            # don't compare, we know start points are different.
+            if selfDigest != otherDigest and startPoint:
+                return False
+            elif selfDigest == otherDigest:
+                return True
+            else:
+                count = len(otherDigest)
+                while count > 0:
+                    count = count-1
+                    otherDigest = self._shift_in_place(otherDigest)
+                    if selfDigest == otherDigest:
+                        return True
+                return False
 
     # --------
     # Segments
